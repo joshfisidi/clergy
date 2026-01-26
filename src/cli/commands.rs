@@ -1,9 +1,9 @@
 use clap::{Parser, Subcommand};
 
+use crate::actions;
+use crate::config;
 use crate::model::PurgeData;
-use crate::safety;
-use crate::shell;
-use crate::ui;
+use crate::tui;
 
 /// CLERGY — macOS daemon cleanup and cache invalidation utility
 #[derive(Parser, Debug)]
@@ -38,7 +38,7 @@ impl Cli {
         match self.command {
             None => {
                 // Default: launch interactive TUI
-                ui::run_ui()?;
+                tui::run_ui()?;
             }
             Some(Commands::Purge { json, headless }) => {
                 run_purge(json, headless)?;
@@ -50,8 +50,10 @@ impl Cli {
 
 /// Executes the purge command with the requested output mode
 fn run_purge(json: bool, headless: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let settings = config::load();
+
     // Check cooldown
-    match safety::can_run_purge() {
+    match actions::can_run_purge(&settings) {
         Ok(()) => {}
         Err(remaining) => {
             println!(
@@ -62,8 +64,8 @@ fn run_purge(json: bool, headless: bool) -> Result<(), Box<dyn std::error::Error
         }
     }
 
-    let data: PurgeData = shell::run_purge()?;
-    safety::mark_purge_run();
+    let data: PurgeData = actions::run_purge()?;
+    actions::mark_purge_run();
 
     // JSON mode: machine-readable only
     if json {
@@ -79,7 +81,7 @@ fn run_purge(json: bool, headless: bool) -> Result<(), Box<dyn std::error::Error
     }
 
     // Default: RatATUI interface
-    ui::render_purge_ui(&data)?;
+    tui::render_purge_ui(&data)?;
     Ok(())
 }
 

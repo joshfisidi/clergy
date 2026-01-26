@@ -52,7 +52,7 @@ pub fn run_purge() -> Result<PurgeData, ShellError> {
     // - no runtime file dependency
     // - no tampering
     // - clean uninstall
-    let script = include_str!("../backend/purge.zsh");
+    let script = include_str!("../../backend/purge.zsh");
 
     // Write script to a secure temporary file
     let mut file = NamedTempFile::new()
