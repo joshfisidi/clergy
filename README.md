@@ -1,12 +1,3 @@
-
- ██████╗██╗     ███████╗██████╗  ██████╗ ██╗   ██╗
-██╔════╝██║     ██╔════╝██╔══██╗██╔════╝ ╚██╗ ██╔╝
-██║     ██║     █████╗  ██████╔╝██║  ███╗ ╚████╔╝
-██║     ██║     ██╔══╝  ██╔══██╗██║   ██║  ╚██╔╝
-╚██████╗███████╗███████╗██║  ██║╚██████╔╝   ██║
- ╚═════╝╚══════╝╚══════╝╚═╝  ╚═╝ ╚═════╝    ╚═╝
-
-
 # CLERGY
 
 A fast, disciplined terminal utility for system hygiene, live metrics, and controlled purge operations.
@@ -82,4 +73,9 @@ Themes are defined in code and can later be made user-configurable via `settings
 ```bash
 brew tap joshfisidi/tap
 brew install clergy
+```
+
+Run ```clergy``` to get started.
+
+
 
