@@ -166,6 +166,7 @@ pub fn draw_error(f: &mut Frame, area: Rect, msg: &str, logo_rows: usize, theme:
 
     let text = Paragraph::new(msg)
         .block(Block::default().title(theme.copy.error_title).borders(Borders::ALL))
+        .wrap(Wrap { trim: true })
         .alignment(Alignment::Center);
 
     f.render_widget(text, content_area);

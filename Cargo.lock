@@ -215,6 +215,7 @@ dependencies = [
  "ratatui",
  "serde",
  "serde_json",
+ "signal-hook",
  "sysinfo",
  "tempfile",
  "toml",

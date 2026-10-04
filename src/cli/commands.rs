@@ -64,6 +64,7 @@ fn run_purge(json: bool, headless: bool) -> Result<(), Box<dyn std::error::Error
         }
     }
 
+    actions::authenticate()?;
     let data: PurgeData = actions::run_purge()?;
     actions::mark_purge_run();
 
@@ -108,5 +109,9 @@ fn render_headless(data: &PurgeData) {
 
 /// Helper for human-readable booleans
 fn yes_no(value: bool) -> &'static str {
-    if value { "yes" } else { "no" }
+    if value {
+        "yes"
+    } else {
+        "no"
+    }
 }

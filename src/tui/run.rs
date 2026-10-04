@@ -7,17 +7,12 @@
 //! - input (key handling)
 //! - theme (visual system)
 
-use std::io::{self, Stdout};
-use std::process::Command;
 use std::time::Duration;
 
-use crossterm::{
-    event::{self, Event, KeyCode},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-};
+use crossbeam_channel::{Receiver, TryRecvError};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 
-use ratatui::{backend::CrosstermBackend, Terminal};
+use super::terminal::TerminalSession;
 
 use crate::app::{ConfirmChoice, LogoAnim, MenuState, UiState};
 use crate::config::Settings;
@@ -42,31 +37,14 @@ const FRAME_MS: u64 = 120;
 // PUBLIC ENTRY POINTS
 // ─────────────────────────────────────────────────────────────
 
-fn ensure_sudo() -> Result<(), Box<dyn std::error::Error>> {
-    let status = Command::new("sudo").arg("-v").status()?;
-
-    if !status.success() {
-        return Err("Administrator privileges required".into());
-    }
-    Ok(())
-}
-
 pub fn run_ui() -> Result<(), Box<dyn std::error::Error>> {
-    // Authenticate BEFORE TUI (prompts in normal terminal)
-    ensure_sudo()?;
-
     // Load settings (mutable for live theme changes)
     let mut settings = crate::config::load();
 
     // Create theme from settings (regenerated when settings change)
     let mut theme = Theme::from_settings(&settings);
 
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
-
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    let mut session = TerminalSession::new()?;
 
     let mut state = UiState::Dashboard;
     let mut menu = MenuState::new(MENU_ITEMS.len());
@@ -74,8 +52,8 @@ pub fn run_ui() -> Result<(), Box<dyn std::error::Error>> {
     let mut collector = MetricsCollector::new();
     let mut logo_anim = LogoAnim::new();
 
-    let result = ui_loop(
-        &mut terminal,
+    ui_loop(
+        &mut session,
         &mut state,
         &mut menu,
         &mut confirm_choice,
@@ -83,13 +61,7 @@ pub fn run_ui() -> Result<(), Box<dyn std::error::Error>> {
         &mut logo_anim,
         &mut settings,
         &mut theme,
-    );
-
-    disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-    terminal.show_cursor()?;
-
-    result
+    )
 }
 
 /// Display purge results in TUI (called from `clergy purge`)
@@ -98,39 +70,35 @@ pub fn render_purge_ui(data: &PurgeData) -> Result<(), Box<dyn std::error::Error
     let settings = crate::config::load();
     let theme = Theme::from_settings(&settings);
 
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
-
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    let mut session = TerminalSession::new()?;
     let mut collector = MetricsCollector::new();
     let mut logo_anim = LogoAnim::new();
 
     loop {
+        if session.interrupted() {
+            return Ok(());
+        }
         let metrics = collector.refresh();
         logo_anim.tick();
 
-        terminal.draw(|f| {
+        session.terminal.draw(|f| {
             let layout = DashboardLayout::new(f.area());
             draw_header(f, layout.header, &theme);
             draw_metrics(f, layout.telemetry, &metrics, &collector, &theme);
             draw_result(f, layout.main, data, logo_anim.visible_rows, &theme);
-            draw_footer(f, layout.footer, &theme);
+            draw_footer(f, layout.footer, &theme, false);
         })?;
 
         if event::poll(Duration::from_millis(FRAME_MS))? {
             if let Event::Key(key) = event::read()? {
-                if matches!(key.code, KeyCode::Char('q') | KeyCode::Esc) {
+                if key.kind == KeyEventKind::Press
+                    && matches!(key.code, KeyCode::Char('q') | KeyCode::Esc)
+                {
                     break;
                 }
             }
         }
     }
-
-    disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-    terminal.show_cursor()?;
 
     Ok(())
 }
@@ -140,7 +108,7 @@ pub fn render_purge_ui(data: &PurgeData) -> Result<(), Box<dyn std::error::Error
 // ─────────────────────────────────────────────────────────────
 
 fn ui_loop(
-    terminal: &mut Terminal<CrosstermBackend<Stdout>>,
+    session: &mut TerminalSession,
     state: &mut UiState,
     menu: &mut MenuState,
     confirm_choice: &mut ConfirmChoice,
@@ -149,16 +117,41 @@ fn ui_loop(
     settings: &mut Settings,
     theme: &mut Theme,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let mut purge_worker: Option<Receiver<Result<PurgeData, String>>> = None;
     loop {
+        // An external interrupt must not abandon a purge that is still running.
+        if session.interrupted() && purge_worker.is_none() {
+            return Ok(());
+        }
+        if let Some(receiver) = &purge_worker {
+            match receiver.try_recv() {
+                Ok(Ok(data)) => {
+                    crate::actions::mark_purge_run();
+                    let _ = crate::actions::save_last(&data);
+                    *state = UiState::Result(data);
+                    purge_worker = None;
+                }
+                Ok(Err(error)) => {
+                    *state = UiState::Error(error);
+                    purge_worker = None;
+                }
+                Err(TryRecvError::Disconnected) => {
+                    *state = UiState::Error("Purge worker stopped unexpectedly.".into());
+                    purge_worker = None;
+                }
+                Err(TryRecvError::Empty) => {}
+            }
+        }
+
         let metrics = collector.refresh();
         logo_anim.tick();
 
-        terminal.draw(|f| {
+        session.terminal.draw(|f| {
             let layout = DashboardLayout::new(f.area());
 
             draw_header(f, layout.header, theme);
             draw_metrics(f, layout.telemetry, &metrics, collector, theme);
-            draw_footer(f, layout.footer, theme);
+            draw_footer(f, layout.footer, theme, matches!(state, UiState::Running));
 
             let logo_rows = logo_anim.visible_rows;
 
@@ -166,7 +159,9 @@ fn ui_loop(
                 UiState::Dashboard => {
                     draw_menu_column(f, layout.main, menu.selected, logo_rows, theme)
                 }
-                UiState::ConfirmPurge => draw_confirm_purge(f, layout.main, confirm_choice, logo_rows, theme),
+                UiState::ConfirmPurge => {
+                    draw_confirm_purge(f, layout.main, confirm_choice, logo_rows, theme)
+                }
                 UiState::Running => draw_running(f, layout.main, logo_rows, theme),
                 UiState::Result(data) => draw_result(f, layout.main, data, logo_rows, theme),
                 UiState::Explain => draw_explain(f, layout.main, logo_rows, theme),
@@ -181,8 +176,18 @@ fn ui_loop(
 
         if event::poll(Duration::from_millis(FRAME_MS))? {
             if let Event::Key(key) = event::read()? {
+                if key.kind != KeyEventKind::Press {
+                    continue;
+                }
                 match handle_key(key.code, state, menu, confirm_choice, settings) {
                     InputResult::Quit => return Ok(()),
+                    InputResult::StartPurge => match session.authenticate()? {
+                        Ok(()) => {
+                            *state = UiState::Running;
+                            purge_worker = Some(crate::worker::spawn_purge_worker());
+                        }
+                        Err(error) => *state = UiState::Error(error.to_string()),
+                    },
                     InputResult::ThemeChanged => {
                         // Regenerate theme from updated settings
                         *theme = Theme::from_settings(settings);

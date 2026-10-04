@@ -1,6 +1,6 @@
-use std::process::{Command, Stdio};
-use std::io::Write;
 use std::fmt;
+use std::io::Write;
+use std::process::{Command, Stdio};
 use tempfile::NamedTempFile;
 
 use crate::model::PurgeData;
@@ -18,16 +18,13 @@ pub enum ShellError {
 impl fmt::Display for ShellError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ShellError::ScriptWrite(e) =>
-                write!(f, "failed to write embedded shell script: {}", e),
-            ShellError::Execution(e) =>
-                write!(f, "failed to execute shell backend: {}", e),
-            ShellError::NonZeroExit(code, stderr) =>
-                write!(f, "shell backend exited with code {}: {}", code, stderr),
-            ShellError::InvalidUtf8(e) =>
-                write!(f, "shell backend returned invalid UTF-8: {}", e),
-            ShellError::JsonParse(e) =>
-                write!(f, "failed to parse backend JSON: {}", e),
+            ShellError::ScriptWrite(e) => write!(f, "failed to write embedded shell script: {}", e),
+            ShellError::Execution(e) => write!(f, "failed to execute shell backend: {}", e),
+            ShellError::NonZeroExit(code, stderr) => {
+                write!(f, "shell backend exited with code {}: {}", code, stderr)
+            }
+            ShellError::InvalidUtf8(e) => write!(f, "shell backend returned invalid UTF-8: {}", e),
+            ShellError::JsonParse(e) => write!(f, "failed to parse backend JSON: {}", e),
         }
     }
 }
@@ -39,8 +36,11 @@ impl std::error::Error for ShellError {}
 /// This function:
 /// - Writes the embedded zsh backend to a secure temp file
 /// - Executes it with `--json`
-/// - Captures stdout only
+/// - Captures stdout and stderr, with no interactive input
 /// - Parses and returns `PurgeData`
+///
+/// The caller must authenticate first in a normal terminal. Every sudo call in
+/// the backend is noninteractive, so expired credentials produce an error.
 ///
 /// It NEVER:
 /// - interpolates user input
@@ -55,8 +55,7 @@ pub fn run_purge() -> Result<PurgeData, ShellError> {
     let script = include_str!("../../backend/purge.zsh");
 
     // Write script to a secure temporary file
-    let mut file = NamedTempFile::new()
-        .map_err(ShellError::ScriptWrite)?;
+    let mut file = NamedTempFile::new().map_err(ShellError::ScriptWrite)?;
 
     file.write_all(script.as_bytes())
         .map_err(ShellError::ScriptWrite)?;
@@ -81,12 +80,10 @@ pub fn run_purge() -> Result<PurgeData, ShellError> {
     }
 
     // Decode stdout (JSON)
-    let stdout = String::from_utf8(output.stdout)
-        .map_err(ShellError::InvalidUtf8)?;
+    let stdout = String::from_utf8(output.stdout).map_err(ShellError::InvalidUtf8)?;
 
     // Deserialize into our frozen schema
-    let data = serde_json::from_str::<PurgeData>(&stdout)
-        .map_err(ShellError::JsonParse)?;
+    let data = serde_json::from_str::<PurgeData>(&stdout).map_err(ShellError::JsonParse)?;
 
     Ok(data)
 }

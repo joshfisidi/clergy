@@ -77,7 +77,56 @@ brew tap joshfisidi/tap
 brew install clergy
 ```
 
-Run ```clergy``` to get started.
+Run `clergy` to get started.
 
+### Build the latest source
+
+On macOS (Apple Silicon or Intel), install Rust and the backend's JSON encoder:
+
+```bash
+brew install rust jq
+git clone https://github.com/joshfisidi/clergy.git
+cd clergy
+cargo build --release --locked
+./target/release/clergy
+```
+
+Homebrew installs the version selected by the tap; pushing a source fix to `main`
+does not update an existing Homebrew installation.
+
+## Purge authentication
+
+Opening the dashboard does not require administrator authentication. Select
+**Purge**, then **Confirm**. CLERGY temporarily returns to the normal terminal for
+sudo's password prompt. Password input stays hidden and is handled by sudo.
+Press Ctrl+C at that prompt to cancel and return to CLERGY without starting a purge.
+
+After authentication, the dashboard resumes and shows the running operation while
+metrics continue to refresh. Wait for the result before starting another purge or
+quitting. Authentication failures, expired credentials, and backend errors return
+to an error panel. The backend never opens another password prompt inside the TUI.
+
+For command-line use:
+
+```bash
+clergy purge --headless
+clergy purge --json
+```
+
+Without terminal input, authentication is noninteractive and fails if cached sudo
+credentials are unavailable. Authenticate with `sudo -v` in that terminal first.
+
+## Regression tests
+
+```bash
+cargo test --locked
+cargo build --locked
+python3 tests/purge_terminal.py
+```
+
+The macOS pseudo-terminal tests replace sudo and all purge actions with mocks.
+They check hidden password input, cancellation and failure recovery, continuing UI
+updates, duplicate-purge prevention, JSON output, and 16 KiB/4 KiB memory pages.
+They do not authenticate with real credentials or change system caches/snapshots.
 
 

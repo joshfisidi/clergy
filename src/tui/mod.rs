@@ -8,5 +8,6 @@
 //! It does NOT contain rendering (that's ui/) or input handling (that's input/).
 
 mod run;
+mod terminal;
 
 pub use run::{render_purge_ui, run_ui};

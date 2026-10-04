@@ -1,9 +1,18 @@
 #!/usr/bin/env zsh
 set -euo pipefail
 
-# Require admin privileges upfront
-if ! sudo -v; then
-  echo "Administrator privileges are required."
+# Check prerequisites before any system changes, including the JSON encoder.
+for tool in sudo pagesize vm_stat sysctl awk date hostname whoami df jq dscacheutil killall tmutil; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    print -u2 -- "Required command not found: $tool"
+    exit 1
+  fi
+done
+
+# Authentication is performed by the caller with the TUI suspended. Never prompt
+# from this captured-output backend, even if credentials expire during a run.
+if ! sudo -n -v; then
+  print -u2 -- "Administrator credentials are unavailable. Confirm the purge again to authenticate."
   exit 1
 fi
 
@@ -87,9 +96,9 @@ clergy_purge() {
   fi
 
   # ── ACTIONS ─────────────────────────────────────
-  sudo dscacheutil -flushcache
-  sudo killall -HUP mDNSResponder
-  tmutil thinlocalsnapshots / 9999999999 4
+  sudo -n dscacheutil -flushcache
+  sudo -n killall -HUP mDNSResponder
+  sudo -n tmutil thinlocalsnapshots / 9999999999 4
 
   # ── RESTORE STDOUT FOR JSON ─────────────────────
   if [[ "$MODE" == "json" ]]; then

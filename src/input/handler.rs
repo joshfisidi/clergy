@@ -13,6 +13,8 @@ pub enum InputResult {
     Continue,
     /// Theme was changed, regenerate it
     ThemeChanged,
+    /// The user confirmed a purge; the runtime must authenticate before starting it.
+    StartPurge,
     /// Exit the application
     Quit,
 }
@@ -28,37 +30,22 @@ pub fn handle_confirm_key(
         KeyCode::Left | KeyCode::Right | KeyCode::Tab => {
             confirm_choice.toggle();
         }
-        KeyCode::Enter => {
-            match confirm_choice {
-                ConfirmChoice::Confirm => {
-                    match crate::actions::can_run_purge(settings) {
-                        Ok(()) => {
-                            *state = UiState::Running;
-
-                            match crate::actions::run_purge() {
-                                Ok(data) => {
-                                    crate::actions::mark_purge_run();
-                                    let _ = crate::actions::save_last(&data);
-                                    *state = UiState::Result(data);
-                                }
-                                Err(e) => {
-                                    *state = UiState::Error(e.to_string());
-                                }
-                            }
-                        }
-                        Err(remaining) => {
-                            *state = UiState::Error(format!(
-                                "Purge recently performed.\nPlease wait {} seconds before running again.",
-                                remaining.as_secs()
-                            ));
-                        }
-                    }
+        KeyCode::Enter => match confirm_choice {
+            ConfirmChoice::Confirm => match crate::actions::can_run_purge(settings) {
+                Ok(()) => {
+                    return InputResult::StartPurge;
                 }
-                ConfirmChoice::Cancel => {
-                    *state = UiState::Dashboard;
+                Err(remaining) => {
+                    *state = UiState::Error(format!(
+                        "Purge recently performed.\nPlease wait {} seconds before running again.",
+                        remaining.as_secs()
+                    ));
                 }
+            },
+            ConfirmChoice::Cancel => {
+                *state = UiState::Dashboard;
             }
-        }
+        },
         KeyCode::Esc => {
             *state = UiState::Dashboard;
         }
@@ -117,6 +104,11 @@ pub fn handle_key(
     confirm_choice: &mut ConfirmChoice,
     settings: &mut Settings,
 ) -> InputResult {
+    // A second purge or navigation must not orphan an operation still in progress.
+    if matches!(state, UiState::Running) {
+        return InputResult::Continue;
+    }
+
     // Handle confirmation screen inputs first
     if matches!(state, UiState::ConfirmPurge) {
         return handle_confirm_key(key, state, confirm_choice, settings);

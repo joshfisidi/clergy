@@ -7,16 +7,8 @@ pub fn spawn_purge_worker() -> Receiver<Result<PurgeData, String>> {
     let (tx, rx) = unbounded();
 
     thread::spawn(move || {
-        // sudo warm-up (credential refresh)
-        if std::process::Command::new("sudo")
-            .arg("-v")
-            .status()
-            .is_err()
-        {
-            let _ = tx.send(Err("Admin authentication failed".into()));
-            return;
-        }
-
+        // Authentication belongs to the main thread with the TUI suspended.
+        // The backend uses sudo -n exclusively, so this worker cannot read keys.
         match crate::actions::run_purge() {
             Ok(data) => {
                 let _ = tx.send(Ok(data));
