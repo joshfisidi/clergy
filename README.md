@@ -1,3 +1,4 @@
+<img width="971" height="539" alt="Screenshot 2026-10-04 at 7 08 56 PM" src="https://github.com/user-attachments/assets/8a58cf5a-001f-4120-af2c-a90c73a7bf24" />
 # CLERGY
 
 A fast, disciplined terminal utility for system hygiene, live metrics, and controlled purge operations.
