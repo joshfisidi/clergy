@@ -71,6 +71,7 @@ Themes are defined in code and can later be made user-configurable via `settings
 ### Homebrew (recommended)
 
 ```bash
+brew trust --formula joshfisidi/tap/clergy` or `brew trust joshfisidi/tap` to trust it.
 brew tap joshfisidi/tap
 brew install clergy
 ```
