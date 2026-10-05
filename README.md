@@ -111,7 +111,7 @@ backend never opens another password prompt inside the TUI.
 Every purge produces a report with:
 
 - Start/end timestamps, host, user, and total duration.
-- Each command's status, exit code, milliseconds, and captured output.
+- Plain-language cleanup outcomes and timings, without terminal commands or exit codes.
 - Before/after disk availability, RAM pages, free/compressed RAM, and used/free swap.
 - Exact disk availability in KiB, plus a readable signed change.
 - Before/after Time Machine snapshot inventories and names that disappeared.
@@ -129,7 +129,8 @@ activity and do not prove bytes reclaimed by a specific action. A successful cac
 flush does not provide a cache-entry count, and successful snapshot thinning may
 remove no snapshots. Reports distinguish these outcomes.
 
-`clergy purge --json` includes the same journal and observations. Partial runs
+`clergy purge --json` includes the journal and observations, plus command details,
+exit codes, and captured output for diagnostics. Partial runs
 produce structured JSON and a nonzero exit status; `--headless` prints the readable
 report. Saving failures are shown rather than silently discarding the report.
 
@@ -155,4 +156,3 @@ The macOS pseudo-terminal tests replace sudo and all purge actions with mocks.
 They check hidden password input, cancellation and failure recovery, continuing UI
 updates, duplicate-purge prevention, JSON output, and 16 KiB/4 KiB memory pages.
 They do not authenticate with real credentials or change system caches/snapshots.
-

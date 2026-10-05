@@ -4,4 +4,4 @@
 
 mod purge;
 
-pub use purge::{ActionStatus, MemoryStats, PurgeData, SwapStats};
+pub use purge::{ActionResult, ActionStatus, MemoryStats, PurgeData, SwapStats};

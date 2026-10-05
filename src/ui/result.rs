@@ -8,7 +8,7 @@ use ratatui::{
 use unicode_width::UnicodeWidthChar;
 
 use crate::branding::{clergy_logo_partial_styled, LOGO_HEIGHT};
-use crate::model::{ActionStatus, PurgeData};
+use crate::model::{ActionResult, ActionStatus, PurgeData};
 use crate::theme::Theme;
 
 fn clean(text: &str) -> String {
@@ -78,6 +78,41 @@ fn measurement(
 
 fn sample(mib: u64, available: Option<bool>) -> Option<u64> {
     (available != Some(false)).then(|| mib.saturating_mul(1024))
+}
+
+fn action_outcome(action: &ActionResult) -> String {
+    let descriptions = match action.label.as_str() {
+        "Directory cache" => Some((
+            "Directory lookup cache cleared",
+            "Directory lookup cache could not be cleared",
+            "Directory lookup cache cleanup was not attempted",
+        )),
+        "DNS responder" => Some((
+            "DNS responder refreshed",
+            "DNS responder could not be refreshed",
+            "DNS refresh was not attempted",
+        )),
+        "Time Machine snapshots" => Some((
+            "Local snapshot cleanup completed",
+            "Local snapshot cleanup could not be completed",
+            "Local snapshot cleanup was not attempted",
+        )),
+        _ => None,
+    };
+    match (descriptions, action.status) {
+        (Some((success, _, _)), ActionStatus::Succeeded) => success.into(),
+        (Some((_, failure, _)), ActionStatus::Failed) => failure.into(),
+        (Some((_, _, skipped)), ActionStatus::Skipped) => skipped.into(),
+        (None, status) => format!(
+            "{} {}",
+            clean(&action.label),
+            match status {
+                ActionStatus::Succeeded => "completed",
+                ActionStatus::Failed => "could not be completed",
+                ActionStatus::Skipped => "was not attempted",
+            }
+        ),
+    }
 }
 
 /// Pre-wrap styled lines using cell widths so scrolling has a stable, exact limit.
@@ -185,7 +220,7 @@ pub fn report_lines(data: &PurgeData, width: u16, theme: &Theme) -> Vec<Line<'st
             theme.info,
         ));
         lines.push(Line::styled(
-            "Exit codes and timings were not saved by this older version.",
+            "Individual cleanup details were not saved by this older version.",
             theme.dim,
         ));
     } else {
@@ -195,34 +230,28 @@ pub fn report_lines(data: &PurgeData, width: u16, theme: &Theme) -> Vec<Line<'st
                 ActionStatus::Failed => ("× FAILED", theme.danger),
                 ActionStatus::Skipped => ("· SKIPPED", theme.dim),
             };
-            let evidence = match action.exit_code {
-                Some(code) => format!("  exit {}  ·  {} ms", code, action.duration_ms),
-                None => "  not executed".into(),
+            let timing = match action.status {
+                ActionStatus::Skipped => String::new(),
+                _ => format!("  ·  {} ms", action.duration_ms),
             };
             lines.push(Line::from(vec![
                 Span::styled(format!("{}  ", status), style),
-                Span::styled(clean(&action.label), theme.bold),
-                Span::styled(evidence, theme.dim),
+                Span::styled(action_outcome(action), theme.bold),
+                Span::styled(timing, theme.dim),
             ]));
+        }
+        if data
+            .actions
+            .iter()
+            .any(|action| action.status == ActionStatus::Skipped)
+        {
             lines.push(Line::styled(
-                format!("  {}", clean(&action.command)),
-                theme.dim,
+                "Remaining cleanup steps were skipped after an earlier failure.",
+                theme.warning,
             ));
-            if !action.output.trim().is_empty() {
-                for output in action.output.lines() {
-                    lines.push(Line::styled(
-                        format!("  {}", clean(output)),
-                        if action.status == ActionStatus::Failed {
-                            theme.warning
-                        } else {
-                            theme.metric_label
-                        },
-                    ));
-                }
-            }
         }
         lines.push(Line::styled(
-            "Cache commands report exit status; macOS supplies no entry count.",
+            "macOS does not report how many cached entries were cleared.",
             theme.dim,
         ));
     }
@@ -348,16 +377,11 @@ pub fn report_lines(data: &PurgeData, width: u16, theme: &Theme) -> Vec<Line<'st
             theme.dim,
         ));
     }
-    if data.actions.iter().any(|action| {
-        action.command.contains("tmutil thinlocalsnapshots")
-            && action.status != ActionStatus::Skipped
-    }) {
-        lines.push(Line::styled(
-            "Thinning request: 9,999,999,999 bytes · urgency 4.",
-            theme.dim,
-        ));
-    }
     section(&mut lines, "READING THIS REPORT", theme);
+    lines.push(Line::styled(
+        "This cleanup refreshes lookup caches and trims local backups; it does not clear app RAM.",
+        theme.dim,
+    ));
     lines.push(Line::styled(
         "Disk/RAM deltas are observations during the run, not guaranteed reclamation.",
         theme.dim,
@@ -462,8 +486,12 @@ mod tests {
         assert!(output.contains("−57.00 MiB"));
         assert!(output.contains("+54.00 MiB"));
         assert!(output.contains("1 disappeared"));
-        assert!(output.contains("exit 0  ·  1513 ms"));
+        assert!(output.contains("Local snapshot cleanup completed  ·  1513 ms"));
         assert!(!output.contains("space reclaimed"));
+        assert!(!output.contains("sudo"));
+        assert!(!output.contains("exit 0"));
+        assert!(!output.contains("Thinned local snapshots:"));
+        assert!(!output.contains("urgency"));
     }
 
     #[test]
@@ -527,6 +555,10 @@ mod tests {
         assert!(output.contains("PURGE INCOMPLETE"));
         assert!(output.contains("× FAILED"));
         assert!(output.contains("· SKIPPED"));
+        assert!(output.contains("DNS responder could not be refreshed"));
+        assert!(output.contains("Local snapshot cleanup was not attempted"));
+        assert!(!output.contains("sudo"));
+        assert!(!output.contains("exit 1"));
     }
 
     #[test]
