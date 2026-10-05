@@ -8,9 +8,14 @@ use ratatui::{
 
 use crate::theme::Theme;
 
-pub fn draw_footer(f: &mut Frame, area: Rect, theme: &Theme, running: bool) {
+pub fn draw_footer(f: &mut Frame, area: Rect, theme: &Theme, running: bool, result: bool) {
     let text = if running {
         format!("{} Please wait for the result.", theme.copy.running_message)
+    } else if result {
+        format!(
+            "↑↓/PgUp/PgDn scroll · Home/End · {} · {}",
+            theme.copy.footer_back, theme.copy.footer_quit
+        )
     } else {
         format!(
             "{} · {} · {} · {}",

@@ -11,7 +11,6 @@ use ratatui::{
 use crate::app::ConfirmChoice;
 use crate::branding::{about_text, attribution, clergy_logo_partial_styled, LOGO_HEIGHT, VERSION};
 use crate::config::Settings;
-use crate::model::PurgeData;
 use crate::system::Metrics;
 use crate::theme::Theme;
 
@@ -30,7 +29,7 @@ pub const MENU_ITEMS: &[&str] = &[
 const MAIN_COLUMN_WIDTH: u16 = 92;
 
 /// Compute a centered panel rect (same dimensions as main menu)
-fn centered_panel(area: Rect) -> Rect {
+pub(super) fn centered_panel(area: Rect) -> Rect {
     Rect {
         x: area.x + area.width.saturating_sub(MAIN_COLUMN_WIDTH) / 2,
         y: area.y,
@@ -138,25 +137,6 @@ pub fn draw_running(f: &mut Frame, area: Rect, logo_rows: usize, theme: &Theme) 
     .alignment(Alignment::Center);
 
     f.render_widget(text, content_area);
-}
-
-pub fn draw_result(f: &mut Frame, area: Rect, data: &PurgeData, logo_rows: usize, theme: &Theme) {
-    let (logo_area, content_area) = panel_with_logo(area);
-
-    f.render_widget(clergy_logo_partial_styled(logo_rows, theme.header), logo_area);
-
-    let body = Paragraph::new(vec![
-        Line::from(format!("Host: {}", data.host)),
-        Line::from(format!("User: {}", data.user)),
-        Line::from(format!("Duration: {}s", data.duration_seconds)),
-        Line::from(""),
-        Line::from(format!("DNS flushed: {}", yes_no(data.dns_flushed))),
-        Line::from(format!("Snapshots thinned: {}", yes_no(data.snapshots_thinned))),
-    ])
-    .block(Block::default().title(theme.copy.result_title).borders(Borders::ALL))
-    .wrap(Wrap { trim: true });
-
-    f.render_widget(body, content_area);
 }
 
 pub fn draw_error(f: &mut Frame, area: Rect, msg: &str, logo_rows: usize, theme: &Theme) {
@@ -379,8 +359,4 @@ pub fn draw_confirm_purge(f: &mut Frame, area: Rect, choice: &ConfirmChoice, log
 
     super::buttons::draw_button(f, buttons[0], "Confirm", *choice == ConfirmChoice::Confirm, theme);
     super::buttons::draw_button(f, buttons[1], "Cancel", *choice == ConfirmChoice::Cancel, theme);
-}
-
-fn yes_no(v: bool) -> &'static str {
-    if v { "yes" } else { "no" }
 }

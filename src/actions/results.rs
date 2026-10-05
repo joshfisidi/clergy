@@ -1,5 +1,7 @@
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
+use tempfile::NamedTempFile;
 
 use crate::model::PurgeData;
 
@@ -18,11 +20,13 @@ fn result_path() -> PathBuf {
     dir
 }
 
-/// Persist the most recent successful purge
+/// Persist the most recent run, including partial failures, without torn writes.
 pub fn save_last(data: &PurgeData) -> Result<(), Box<dyn std::error::Error>> {
     let path = result_path();
     let json = serde_json::to_string_pretty(data)?;
-    fs::write(path, json)?;
+    let mut file = NamedTempFile::new_in(path.parent().ok_or("No report directory")?)?;
+    file.write_all(json.as_bytes())?;
+    file.persist(path)?;
     Ok(())
 }
 

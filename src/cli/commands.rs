@@ -65,53 +65,43 @@ fn run_purge(json: bool, headless: bool) -> Result<(), Box<dyn std::error::Error
     }
 
     actions::authenticate()?;
-    let data: PurgeData = actions::run_purge()?;
-    actions::mark_purge_run();
+    let mut data: PurgeData = actions::run_purge()?;
+    if data.completed() {
+        actions::mark_purge_run();
+    }
+    if let Err(error) = actions::save_last(&data) {
+        data.report_save_error = Some(error.to_string());
+    }
 
     // JSON mode: machine-readable only
     if json {
         let output = serde_json::to_string_pretty(&data)?;
         println!("{output}");
-        return Ok(());
+        return finish_status(&data);
     }
 
     // Headless mode: no RatATUI, plain text only
     if headless {
         render_headless(&data);
-        return Ok(());
+        return finish_status(&data);
     }
 
     // Default: RatATUI interface
     tui::render_purge_ui(&data)?;
-    Ok(())
+    finish_status(&data)
+}
+
+fn finish_status(data: &PurgeData) -> Result<(), Box<dyn std::error::Error>> {
+    if data.completed() {
+        Ok(())
+    } else {
+        Err("Purge incomplete; see the action journal for failures and skipped steps.".into())
+    }
 }
 
 /// Plain-text fallback rendering (no TUI)
 fn render_headless(data: &PurgeData) {
-    println!("CLERGY · SYSTEM PURGE");
-    println!("Host      : {}", data.host);
-    println!("User      : {}", data.user);
-    println!("Started   : {}", data.start_time);
-    println!("Duration  : {}s", data.duration_seconds);
-    println!();
-
-    println!("Disk (Before):");
-    println!("{}", data.disk_before);
-    println!();
-
-    println!("Disk (After):");
-    println!("{}", data.disk_after);
-    println!();
-
-    println!("DNS flushed        : {}", yes_no(data.dns_flushed));
-    println!("Snapshots thinned : {}", yes_no(data.snapshots_thinned));
-}
-
-/// Helper for human-readable booleans
-fn yes_no(value: bool) -> &'static str {
-    if value {
-        "yes"
-    } else {
-        "no"
+    for line in crate::ui::report_lines(data, 90, &crate::theme::Theme::default()) {
+        println!("{line}");
     }
 }

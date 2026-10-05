@@ -10,7 +10,7 @@ pub enum UiState {
     Dashboard,
     ConfirmPurge,
     Running,
-    Result(PurgeData),
+    Result(Box<PurgeData>, u16),
     Explain,
     Status,
     About,

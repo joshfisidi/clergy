@@ -75,7 +75,7 @@ pub fn handle_menu_key(
             }
             1 => {
                 if let Some(data) = crate::actions::load_last() {
-                    *state = UiState::Result(data);
+                    *state = UiState::Result(Box::new(data), 0);
                 } else {
                     *state = UiState::Error("No previous purge found.".into());
                 }
@@ -106,6 +106,21 @@ pub fn handle_key(
 ) -> InputResult {
     // A second purge or navigation must not orphan an operation still in progress.
     if matches!(state, UiState::Running) {
+        return InputResult::Continue;
+    }
+
+    if let UiState::Result(_, scroll) = state {
+        match key {
+            KeyCode::Down | KeyCode::Char('j') => *scroll = scroll.saturating_add(1),
+            KeyCode::Up | KeyCode::Char('k') => *scroll = scroll.saturating_sub(1),
+            KeyCode::PageDown => *scroll = scroll.saturating_add(8),
+            KeyCode::PageUp => *scroll = scroll.saturating_sub(8),
+            KeyCode::Home => *scroll = 0,
+            KeyCode::End => *scroll = u16::MAX,
+            KeyCode::Esc | KeyCode::Backspace => *state = UiState::Dashboard,
+            KeyCode::Char('q') => return InputResult::Quit,
+            _ => {}
+        }
         return InputResult::Continue;
     }
 

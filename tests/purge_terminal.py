@@ -67,6 +67,14 @@ if name == 'sudo':
             sys.exit(1)
         sys.exit(0)
     sys.exit(subprocess.call(args[1:]))
+elif name == 'tmutil' and args[0] == 'listlocalsnapshots':
+    log('snapshot_inventory')
+    if mode == 'inventory_failure':
+        sys.exit(1)
+    print('Snapshots for volume group containing disk /:')
+    if not os.path.exists(os.environ['TEST_LOG'] + '.purged'):
+        print('com.apple.TimeMachine.2026-10-04-190000.local')
+    print('com.apple.TimeMachine.2026-10-04-191000.local')
 elif name in ('dscacheutil', 'killall', 'tmutil'):
     log('action', name=name, args=args)
     if mode == 'backend_failure' and name == 'dscacheutil':
@@ -74,12 +82,32 @@ elif name in ('dscacheutil', 'killall', 'tmutil'):
         sys.exit(1)
     if name == 'tmutil':
         time.sleep(1.5)  # Prove the UI continues redrawing during slow work.
+        if mode == 'snapshot_failure':
+            print('mock snapshot thinning failed', file=sys.stderr)
+            sys.exit(1)
+        open(os.environ['TEST_LOG'] + '.purged', 'w').close()
+        print('Thinned local snapshots:')
+        print('com.apple.TimeMachine.2026-10-04-190000.local')
+elif name == 'df':
+    if '-kP' in args:
+        if mode == 'disk_unavailable':
+            sys.exit(1)
+        available = 600002048 if os.path.exists(os.environ['TEST_LOG'] + '.purged') else 600000000
+        print('Filesystem 1024-blocks Used Available Capacity Mounted on')
+        print('/dev/disk1 976000000 10000000 %s 1%% /' % available)
+    else:
+        print('Filesystem Size Used Avail Capacity Mounted on')
+        print('/dev/disk1 931Gi 13Gi 572Gi 1% /')
 elif name == 'pagesize':
     print(os.environ.get('TEST_PAGE_SIZE', '16384'))
 elif name == 'vm_stat':
+    if mode == 'memory_unavailable':
+        sys.exit(1)
     print('Pages free: 100.\nPages active: 200.\nPages inactive: 50.\n'
           'Pages speculative: 10.\nPages occupied by compressor: 20.')
 elif name == 'sysctl':
+    if mode == 'swap_unavailable':
+        sys.exit(1)
     print('vm.swapusage: total = 1024.00M  used = 512.00M  free = 512.00M')
 elif name == 'jq':
     if mode == 'invalid_json':
@@ -175,11 +203,11 @@ class PurgeTerminalTests(unittest.TestCase):
         fixture = self.bin / "mock.py"
         fixture.write_text(MOCK)
         fixture.chmod(0o755)
-        for name in ("sudo", "dscacheutil", "killall", "tmutil", "pagesize",
+        for name in ("sudo", "dscacheutil", "killall", "tmutil", "pagesize", "df",
                      "vm_stat", "sysctl", "jq"):
             (self.bin / name).symlink_to(fixture)
         # An isolated PATH also lets us simulate missing jq without hiding mocks.
-        for name in ("zsh", "awk", "date", "hostname", "whoami", "df"):
+        for name in ("zsh", "awk", "date", "hostname", "whoami"):
             (self.bin / name).symlink_to(shutil.which(name))
         self.log = self.base / "calls.jsonl"
         self.runner = self.base / "runner.py"
@@ -369,6 +397,12 @@ class PurgeTerminalTests(unittest.TestCase):
         self.pump()
         self.assertEqual(self.process.returncode, 0)
         self.assertTrue(json.loads(output)["snapshots_thinned"])
+        report = json.loads(output)
+        self.assertEqual([action["status"] for action in report["actions"]], ["succeeded"] * 3)
+        self.assertTrue(all(action["exit_code"] == 0 for action in report["actions"]))
+        self.assertEqual(report["disk_available_after_kib"] - report["disk_available_before_kib"], 2048)
+        self.assertEqual(len(report["snapshots_before"]), 2)
+        self.assertEqual(len(report["snapshots_after"]), 1)
         self.assertEqual(self.calls("exit")[-1]["attributes"], repr(original))
         self.assertNotIn(b"fake-password-for-test", self.output)
 
@@ -386,6 +420,77 @@ class PurgeTerminalTests(unittest.TestCase):
                 self.assertEqual(data["swap_before"]["used_mb"], 512)
                 self.assertEqual(self.calls("auth"), [])
                 self.assertTrue(all(call["args"][0] == "-n" for call in self.calls("sudo")))
+
+    def test_partial_failure_retains_journal_and_returns_nonzero(self):
+        self.env["TEST_MODE"] = "snapshot_failure"
+        result = subprocess.run([str(BINARY), "purge", "--json"], stdin=subprocess.DEVNULL,
+                                capture_output=True, env=self.env, timeout=10)
+        self.assertNotEqual(result.returncode, 0)
+        data = json.loads(result.stdout)
+        self.assertTrue(data["dns_flushed"])
+        self.assertFalse(data["snapshots_thinned"])
+        self.assertEqual(data["actions"][-1]["status"], "failed")
+        self.assertEqual(data["actions"][-1]["exit_code"], 1)
+        self.assertIn("mock snapshot thinning failed", data["actions"][-1]["output"])
+
+    def test_early_failure_records_skipped_steps(self):
+        self.env["TEST_MODE"] = "backend_failure"
+        result = subprocess.run([str(BINARY), "purge", "--json"], stdin=subprocess.DEVNULL,
+                                capture_output=True, env=self.env, timeout=10)
+        self.assertNotEqual(result.returncode, 0)
+        data = json.loads(result.stdout)
+        self.assertEqual([action["status"] for action in data["actions"]], ["failed", "skipped", "skipped"])
+        self.assertEqual(len(self.calls("action")), 1)
+        self.assertIsNone(data["actions"][1]["exit_code"])
+
+    def test_snapshot_inventory_failure_is_unknown(self):
+        self.env["TEST_MODE"] = "inventory_failure"
+        result = subprocess.run([str(BINARY), "purge", "--json"], stdin=subprocess.DEVNULL,
+                                capture_output=True, env=self.env, timeout=10)
+        self.assertEqual(result.returncode, 0)
+        data = json.loads(result.stdout)
+        self.assertIsNone(data["snapshots_before"])
+        self.assertIsNone(data["snapshots_after"])
+
+    def test_unavailable_precise_disk_samples_do_not_become_zero(self):
+        self.env["TEST_MODE"] = "disk_unavailable"
+        result = subprocess.run([str(BINARY), "purge", "--json"], stdin=subprocess.DEVNULL,
+                                capture_output=True, env=self.env, timeout=10)
+        self.assertEqual(result.returncode, 0)
+        data = json.loads(result.stdout)
+        self.assertIsNone(data["disk_available_before_kib"])
+        self.assertIsNone(data["disk_available_after_kib"])
+
+    def test_report_scrolls_and_last_session_reopens_without_authentication(self):
+        self.launch()
+        self.confirm()
+        self.password()
+        self.wait_for(b"PURGE COMPLETE")
+        self.wait_for(b"ACTION JOURNAL")
+        self.wait_for(b"MEASURED CHANGES")
+        os.write(self.master, b"\x1b[F")  # End.
+        self.wait_for(b"binary units")
+        os.write(self.master, b"\x1b[H")  # Home.
+        self.pump(0.3)
+        self.assertIn(b"PURGE COMPLETE", self.screen.text())
+        os.write(self.master, b"\x1b")
+        self.pump(0.3)
+        os.write(self.master, b"\x1b[B\r")  # Last Session.
+        self.pump(0.5)
+        self.assertIn(b"PURGE COMPLETE", self.screen.text())
+        self.assertEqual(len(self.calls("auth")), 1)
+        self.quit_and_check()
+
+    def test_unavailable_memory_and_swap_samples_are_flagged(self):
+        for mode, metric in [("memory_unavailable", "memory"), ("swap_unavailable", "swap")]:
+            with self.subTest(mode=mode):
+                self.env["TEST_MODE"] = mode
+                result = subprocess.run([str(BINARY), "purge", "--json"], stdin=subprocess.DEVNULL,
+                                        capture_output=True, env=self.env, timeout=10)
+                self.assertEqual(result.returncode, 0)
+                data = json.loads(result.stdout)
+                self.assertFalse(data[metric + "_before_available"])
+                self.assertFalse(data[metric + "_after_available"])
 
 
 if __name__ == "__main__":

@@ -19,6 +19,7 @@ use ratatui::{
     Frame,
 };
 
+use crate::model::PurgeData;
 use crate::system::{Level, Metrics, MetricsCollector, Sparkline, TrackedMetric};
 use crate::theme::Theme;
 
@@ -160,7 +161,10 @@ fn draw_tracked_metric(
 
     let mut content = vec![Line::from(Span::styled(value_text, value_style))];
     content.extend(grid_rows);
-    content.push(Line::from(Span::styled(detail.to_string(), theme.metric_label)));
+    content.push(Line::from(Span::styled(
+        detail.to_string(),
+        theme.metric_label,
+    )));
 
     let paragraph = Paragraph::new(content)
         .block(block)
@@ -209,7 +213,10 @@ fn draw_text_metric_with_spark(
     // Usage grid for load (normalized to max ~4.0 for typical systems)
     let grid_rows = render_usage_grid_info(spark, theme, 2, 4.0);
 
-    let mut content = vec![Line::from(Span::styled(value.to_string(), theme.metric_value))];
+    let mut content = vec![Line::from(Span::styled(
+        value.to_string(),
+        theme.metric_value,
+    ))];
     content.extend(grid_rows);
 
     let paragraph = Paragraph::new(content)
@@ -228,6 +235,7 @@ pub fn draw_metrics(
     area: Rect,
     metrics: &Metrics,
     collector: &MetricsCollector,
+    last_run: Option<&PurgeData>,
     theme: &Theme,
 ) {
     let rows = Layout::default()
@@ -314,5 +322,8 @@ pub fn draw_metrics(
         &metrics.process_count.to_string(),
         theme,
     );
-    draw_text_metric(f, regions[7], "Purge", "—", theme);
+    let last_purge = last_run
+        .map(|data| format!("{} · {}s", data.start_time, data.duration_seconds))
+        .unwrap_or_else(|| "—".into());
+    draw_text_metric(f, regions[7], "Purge", &last_purge, theme);
 }

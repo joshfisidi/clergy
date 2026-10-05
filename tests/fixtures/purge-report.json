@@ -1,0 +1,23 @@
+{
+  "host": "fixture-mac", "user": "fixture-user",
+  "start_time": "19:53:05", "duration_seconds": 2,
+  "started_at": "2026-10-04 19:53:05 -0400",
+  "finished_at": "2026-10-04 19:53:07 -0400",
+  "disk_before": "Filesystem Size Used Avail Capacity Mounted on\n/dev/disk1 931Gi 13Gi 613Gi 3% /",
+  "disk_after": "Filesystem Size Used Avail Capacity Mounted on\n/dev/disk1 931Gi 13Gi 613Gi 3% /",
+  "disk_available_before_kib": 642777088,
+  "disk_available_after_kib": 642779136,
+  "memory_before": {"used_mb": 5839, "free_mb": 76, "compressed_mb": 6717},
+  "memory_after": {"used_mb": 5782, "free_mb": 84, "compressed_mb": 6771},
+  "swap_before": {"used_mb": 8439, "free_mb": 777},
+  "swap_after": {"used_mb": 8439, "free_mb": 777},
+  "dns_flushed": true, "snapshots_thinned": true,
+  "snapshots_before": ["com.apple.TimeMachine.2026-10-04-190000.local", "com.apple.TimeMachine.2026-10-04-191000.local"],
+  "snapshots_after": ["com.apple.TimeMachine.2026-10-04-191000.local"],
+  "actions": [
+    {"label": "Directory cache", "command": "sudo -n dscacheutil -flushcache", "status": "succeeded", "duration_ms": 18, "exit_code": 0, "output": ""},
+    {"label": "DNS responder", "command": "sudo -n killall -HUP mDNSResponder", "status": "succeeded", "duration_ms": 24, "exit_code": 0, "output": ""},
+    {"label": "Time Machine snapshots", "command": "sudo -n tmutil thinlocalsnapshots / 9999999999 4", "status": "succeeded", "duration_ms": 1513, "exit_code": 0,
+     "output": "Thinned local snapshots:\ncom.apple.TimeMachine.2026-10-04-190000.local"}
+  ]
+}

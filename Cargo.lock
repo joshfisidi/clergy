@@ -219,6 +219,7 @@ dependencies = [
  "sysinfo",
  "tempfile",
  "toml",
+ "unicode-width",
 ]
 
 [[package]]

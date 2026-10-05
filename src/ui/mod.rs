@@ -8,11 +8,13 @@ mod footer;
 mod header;
 mod metrics;
 mod panels;
+mod result;
 
 pub use footer::draw_footer;
 pub use header::draw_header;
 pub use metrics::draw_metrics;
 pub use panels::{
     draw_about, draw_confirm_purge, draw_error, draw_explain, draw_menu_column,
-    draw_result, draw_running, draw_settings, draw_status, MENU_ITEMS,
+    draw_running, draw_settings, draw_status, MENU_ITEMS,
 };
+pub use result::{draw_result, report_lines};

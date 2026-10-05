@@ -73,6 +73,7 @@ pub fn render_purge_ui(data: &PurgeData) -> Result<(), Box<dyn std::error::Error
     let mut session = TerminalSession::new()?;
     let mut collector = MetricsCollector::new();
     let mut logo_anim = LogoAnim::new();
+    let mut scroll = 0;
 
     loop {
         if session.interrupted() {
@@ -84,17 +85,38 @@ pub fn render_purge_ui(data: &PurgeData) -> Result<(), Box<dyn std::error::Error
         session.terminal.draw(|f| {
             let layout = DashboardLayout::new(f.area());
             draw_header(f, layout.header, &theme);
-            draw_metrics(f, layout.telemetry, &metrics, &collector, &theme);
-            draw_result(f, layout.main, data, logo_anim.visible_rows, &theme);
-            draw_footer(f, layout.footer, &theme, false);
+            draw_metrics(
+                f,
+                layout.telemetry,
+                &metrics,
+                &collector,
+                Some(data),
+                &theme,
+            );
+            draw_result(
+                f,
+                layout.main,
+                data,
+                &mut scroll,
+                logo_anim.visible_rows,
+                &theme,
+            );
+            draw_footer(f, layout.footer, &theme, false, true);
         })?;
 
         if event::poll(Duration::from_millis(FRAME_MS))? {
             if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press
-                    && matches!(key.code, KeyCode::Char('q') | KeyCode::Esc)
-                {
-                    break;
+                if key.kind == KeyEventKind::Press {
+                    match key.code {
+                        KeyCode::Char('q') | KeyCode::Esc => break,
+                        KeyCode::Down | KeyCode::Char('j') => scroll = scroll.saturating_add(1),
+                        KeyCode::Up | KeyCode::Char('k') => scroll = scroll.saturating_sub(1),
+                        KeyCode::PageDown => scroll = scroll.saturating_add(8),
+                        KeyCode::PageUp => scroll = scroll.saturating_sub(8),
+                        KeyCode::Home => scroll = 0,
+                        KeyCode::End => scroll = u16::MAX,
+                        _ => {}
+                    }
                 }
             }
         }
@@ -118,6 +140,7 @@ fn ui_loop(
     theme: &mut Theme,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut purge_worker: Option<Receiver<Result<PurgeData, String>>> = None;
+    let mut last_run = crate::actions::load_last();
     loop {
         // An external interrupt must not abandon a purge that is still running.
         if session.interrupted() && purge_worker.is_none() {
@@ -125,10 +148,15 @@ fn ui_loop(
         }
         if let Some(receiver) = &purge_worker {
             match receiver.try_recv() {
-                Ok(Ok(data)) => {
-                    crate::actions::mark_purge_run();
-                    let _ = crate::actions::save_last(&data);
-                    *state = UiState::Result(data);
+                Ok(Ok(mut data)) => {
+                    if data.completed() {
+                        crate::actions::mark_purge_run();
+                    }
+                    if let Err(error) = crate::actions::save_last(&data) {
+                        data.report_save_error = Some(error.to_string());
+                    }
+                    last_run = Some(data.clone());
+                    *state = UiState::Result(Box::new(data), 0);
                     purge_worker = None;
                 }
                 Ok(Err(error)) => {
@@ -150,8 +178,21 @@ fn ui_loop(
             let layout = DashboardLayout::new(f.area());
 
             draw_header(f, layout.header, theme);
-            draw_metrics(f, layout.telemetry, &metrics, collector, theme);
-            draw_footer(f, layout.footer, theme, matches!(state, UiState::Running));
+            draw_metrics(
+                f,
+                layout.telemetry,
+                &metrics,
+                collector,
+                last_run.as_ref(),
+                theme,
+            );
+            draw_footer(
+                f,
+                layout.footer,
+                theme,
+                matches!(state, UiState::Running),
+                matches!(state, UiState::Result(..)),
+            );
 
             let logo_rows = logo_anim.visible_rows;
 
@@ -163,7 +204,9 @@ fn ui_loop(
                     draw_confirm_purge(f, layout.main, confirm_choice, logo_rows, theme)
                 }
                 UiState::Running => draw_running(f, layout.main, logo_rows, theme),
-                UiState::Result(data) => draw_result(f, layout.main, data, logo_rows, theme),
+                UiState::Result(data, scroll) => {
+                    draw_result(f, layout.main, data, scroll, logo_rows, theme)
+                }
                 UiState::Explain => draw_explain(f, layout.main, logo_rows, theme),
                 UiState::Status => draw_status(f, layout.main, &metrics, logo_rows, theme),
                 UiState::About => draw_about(f, layout.main, logo_rows, theme),
