@@ -466,8 +466,11 @@ class PurgeTerminalTests(unittest.TestCase):
         self.confirm()
         self.password()
         self.wait_for(b"PURGE COMPLETE")
-        self.wait_for(b"ACTION JOURNAL")
+        self.wait_for(b"WHAT HAPPENED")
         self.wait_for(b"MEASURED CHANGES")
+        self.assertIn(b"DNS cache refreshed", self.screen.text())
+        self.assertNotIn(b"sudo -n", self.screen.text())
+        self.assertNotIn(b"exit 0", self.screen.text())
         os.write(self.master, b"\x1b[F")  # End.
         self.wait_for(b"binary units")
         os.write(self.master, b"\x1b[H")  # Home.

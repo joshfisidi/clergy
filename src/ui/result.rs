@@ -83,19 +83,19 @@ fn sample(mib: u64, available: Option<bool>) -> Option<u64> {
 fn action_outcome(action: &ActionResult) -> String {
     let descriptions = match action.label.as_str() {
         "Directory cache" => Some((
-            "Directory lookup cache cleared",
-            "Directory lookup cache could not be cleared",
-            "Directory lookup cache cleanup was not attempted",
+            "Directory cache cleared",
+            "Directory cache could not be cleared",
+            "Directory cache cleanup was not attempted",
         )),
         "DNS responder" => Some((
-            "DNS responder refreshed",
-            "DNS responder could not be refreshed",
+            "DNS cache refreshed",
+            "DNS cache could not be refreshed",
             "DNS refresh was not attempted",
         )),
         "Time Machine snapshots" => Some((
-            "Local snapshot cleanup completed",
-            "Local snapshot cleanup could not be completed",
-            "Local snapshot cleanup was not attempted",
+            "Local backup cleanup completed",
+            "Local backup cleanup could not be completed",
+            "Local backup cleanup was not attempted",
         )),
         _ => None,
     };
@@ -201,11 +201,11 @@ pub fn report_lines(data: &PurgeData, width: u16, theme: &Theme) -> Vec<Line<'st
         ));
     }
 
-    section(&mut lines, "01 / ACTION JOURNAL", theme);
+    section(&mut lines, "01 / WHAT HAPPENED", theme);
     if data.actions.is_empty() {
         lines.push(Line::styled(
             format!(
-                "DNS flush: {} · Snapshot thinning: {}",
+                "DNS cache: {} · Local backup cleanup: {}",
                 if data.dns_flushed {
                     "reported successful"
                 } else {
@@ -250,10 +250,6 @@ pub fn report_lines(data: &PurgeData, width: u16, theme: &Theme) -> Vec<Line<'st
                 theme.warning,
             ));
         }
-        lines.push(Line::styled(
-            "macOS does not report how many cached entries were cleared.",
-            theme.dim,
-        ));
     }
 
     section(&mut lines, "02 / MEASURED CHANGES", theme);
@@ -486,7 +482,7 @@ mod tests {
         assert!(output.contains("−57.00 MiB"));
         assert!(output.contains("+54.00 MiB"));
         assert!(output.contains("1 disappeared"));
-        assert!(output.contains("Local snapshot cleanup completed  ·  1513 ms"));
+        assert!(output.contains("Local backup cleanup completed  ·  1513 ms"));
         assert!(!output.contains("space reclaimed"));
         assert!(!output.contains("sudo"));
         assert!(!output.contains("exit 0"));
@@ -555,8 +551,8 @@ mod tests {
         assert!(output.contains("PURGE INCOMPLETE"));
         assert!(output.contains("× FAILED"));
         assert!(output.contains("· SKIPPED"));
-        assert!(output.contains("DNS responder could not be refreshed"));
-        assert!(output.contains("Local snapshot cleanup was not attempted"));
+        assert!(output.contains("DNS cache could not be refreshed"));
+        assert!(output.contains("Local backup cleanup was not attempted"));
         assert!(!output.contains("sudo"));
         assert!(!output.contains("exit 1"));
     }
